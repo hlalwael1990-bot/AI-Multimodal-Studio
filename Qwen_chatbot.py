@@ -1,5 +1,6 @@
 import streamlit as st
 import base64
+import os
 from PIL import Image
 from huggingface_hub import InferenceClient
 
@@ -15,35 +16,53 @@ st.set_page_config(
 st.title("🚀 AI Multimodal Studio")
 
 # =========================================
-# AUTHENTICATION (ENTER TO LOGIN)
+# ACCESS CONTROL (API OR PASSWORD)
 # =========================================
-st.sidebar.title("🔐 Authentication")
+st.sidebar.title("🔐 Access Control")
 
-if "hf_token" not in st.session_state:
-    st.session_state.hf_token = None
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-if not st.session_state.hf_token:
-    with st.sidebar.form("auth_form"):
-        token_input = st.text_input(
-            "Enter HuggingFace API Key",
-            type="password"
-        )
-        submitted = st.form_submit_button("Activate (Press Enter)")
+if "user_token" not in st.session_state:
+    st.session_state.user_token = None
 
-        if submitted:
-            if token_input.startswith("hf_"):
-                st.session_state.hf_token = token_input
-                st.rerun()
-            else:
-                st.error("Invalid token ❌")
+if not st.session_state.authenticated:
+
+    user_api = st.sidebar.text_input(
+        "Enter your  API Key (optional)",
+        type="password"
+    )
+
+    password = st.sidebar.text_input(
+        " enter password",
+        type="password"
+    )
+
+    # يمكنك تغيير كلمة المرور هنا
+    APP_PASSWORD = "WaelAI1990"
+
+    if user_api:
+        if user_api.startswith("hf_"):
+            st.session_state.user_token = user_api
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.sidebar.error("Invalid API Key ❌")
+
+    elif password == APP_PASSWORD:
+        st.session_state.user_token = os.getenv("HF_TOKEN")
+        st.session_state.authenticated = True
+        st.rerun()
 
     st.stop()
 
 if st.sidebar.button("Logout"):
-    st.session_state.hf_token = None
+    st.session_state.authenticated = False
+    st.session_state.user_token = None
     st.rerun()
 
-client = InferenceClient(api_key=st.session_state.hf_token)
+# إنشاء العميل
+client = InferenceClient(token=st.session_state.user_token)
 
 # =========================================
 # SETTINGS
@@ -134,7 +153,7 @@ if mode == "Image → Text":
                     st.error(str(e))
 
 # =========================================
-# TEXT → IMAGE (ENTER TO GENERATE)
+# TEXT → IMAGE
 # =========================================
 if mode == "Text → Image":
 
@@ -166,7 +185,7 @@ if mode == "Text → Image":
                     st.error(str(e))
 
 # =========================================
-# CHAT (STREAMING + ENTER SEND)
+# CHAT (STREAMING)
 # =========================================
 if mode == "Chat":
 
