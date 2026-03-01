@@ -29,12 +29,12 @@ if "user_token" not in st.session_state:
 if not st.session_state.authenticated:
 
     user_api = st.sidebar.text_input(
-        "Enter your  API Key (optional)",
+        "Enter your HuggingFace API Key (optional)",
         type="password"
     )
 
     password = st.sidebar.text_input(
-        " enter password",
+        "Or enter password",
         type="password"
     )
 
@@ -50,9 +50,15 @@ if not st.session_state.authenticated:
             st.sidebar.error("Invalid API Key ❌")
 
     elif password == APP_PASSWORD:
-        st.session_state.user_token = os.getenv("HF_TOKEN")
-        st.session_state.authenticated = True
-        st.rerun()
+        # يعمل على Cloud أو Local
+        token = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
+
+        if token:
+            st.session_state.user_token = token
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.sidebar.error("HF_TOKEN not configured in Secrets ❌")
 
     st.stop()
 
@@ -61,7 +67,9 @@ if st.sidebar.button("Logout"):
     st.session_state.user_token = None
     st.rerun()
 
-# إنشاء العميل
+# =========================================
+# CREATE CLIENT
+# =========================================
 client = InferenceClient(token=st.session_state.user_token)
 
 # =========================================
