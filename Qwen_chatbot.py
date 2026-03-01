@@ -1,7 +1,6 @@
 import streamlit as st
 import base64
 import os
-import traceback
 from PIL import Image
 from huggingface_hub import InferenceClient
 
@@ -9,31 +8,12 @@ from huggingface_hub import InferenceClient
 # PAGE CONFIG
 # =========================================
 st.set_page_config(
-    page_title="AI Multimodal Studio",
+    page_title="AI Hlal Chatbot",
     page_icon="🚀",
     layout="wide"
 )
 
-st.title("🚀 AI Multimodal Studio")
-
-# =========================================
-# SAFE TOKEN LOADER
-# =========================================
-def load_hf_token():
-    token = None
-
-    # Try Streamlit secrets safely
-    try:
-        if "HF_TOKEN" in st.secrets:
-            token = st.secrets["HF_TOKEN"]
-    except Exception:
-        pass
-
-    # Fallback to environment variable
-    if not token:
-        token = os.getenv("HF_TOKEN")
-
-    return token
+st.title("🚀 AI Hlal Chatbot")
 
 # =========================================
 # SESSION INIT
@@ -47,61 +27,75 @@ if "user_token" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "system_prompt" not in st.session_state:
-    st.session_state.system_prompt = (
-        "You are Qwen 3.5 35B advanced assistant. "
-        "Respond clearly and professionally."
-    )
-
 # =========================================
-# ACCESS CONTROL
+# LOGIN SYSTEM
 # =========================================
 st.sidebar.title("🔐 Access Control")
 
 if not st.session_state.authenticated:
 
-    user_api = st.sidebar.text_input(
-        "Enter your HuggingFace API Key (optional)",
-        type="password"
-    )
+    with st.sidebar.form("login_form"):
+        user_api = st.text_input(
+            "Enter your  API Key (optional)",
+            type="password"
+        )
 
-    password = st.sidebar.text_input(
-        "Or enter password",
-        type="password"
-    )
+        password = st.text_input(
+            "enter password",
+            type="password"
+        )
+
+        login_clicked = st.form_submit_button("Login")
 
     APP_PASSWORD = "WaelAI1990"
 
-    # Direct API login
-    if user_api:
-        if user_api.startswith("hf_"):
-            st.session_state.user_token = user_api
-            st.session_state.authenticated = True
-            st.rerun()
+    if login_clicked:
+
+        # Direct API login
+        if user_api:
+            if user_api.startswith("hf_"):
+                st.session_state.user_token = user_api
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.sidebar.error("Invalid API Key ❌")
+
+        # Password login
+        elif password == APP_PASSWORD:
+
+            token = None
+
+            try:
+                if "HF_TOKEN" in st.secrets:
+                    token = st.secrets["HF_TOKEN"]
+            except Exception:
+                pass
+
+            if not token:
+                token = os.getenv("HF_TOKEN")
+
+            if token:
+                st.session_state.user_token = token
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.sidebar.error("HF_TOKEN not configured ❌")
+
         else:
-            st.sidebar.error("Invalid API Key ❌")
-
-    # Password login (uses stored token)
-    elif password == APP_PASSWORD:
-
-        token = load_hf_token()
-
-        if token:
-            st.session_state.user_token = token
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.sidebar.error("HF_TOKEN not found ❌")
-            st.sidebar.info(
-                "Set HF_TOKEN in .streamlit/secrets.toml or as environment variable."
-            )
+            st.sidebar.error("Invalid credentials ❌")
 
     st.stop()
 
-# Logout
+# =========================================
+# LOGOUT + CLEAR CHAT
+# =========================================
 if st.sidebar.button("Logout"):
     st.session_state.authenticated = False
     st.session_state.user_token = None
+    st.session_state.messages = []
+    st.rerun()
+
+if st.sidebar.button("🗑 Clear Chat"):
     st.session_state.messages = []
     st.rerun()
 
@@ -111,21 +105,23 @@ if st.sidebar.button("Logout"):
 client = InferenceClient(token=st.session_state.user_token)
 
 # =========================================
-# SETTINGS
+# SETTINGS SIDEBAR
 # =========================================
 st.sidebar.title("⚙ Settings")
 
 mode = st.sidebar.radio(
     "Mode",
-    ["Image → Text", "Text → Image", "Chat"]
+    ["Chat", "Image → Text", "Text → Image"]
 )
 
 temperature = st.sidebar.slider("Temperature", 0.0, 1.0, 0.5)
 max_tokens = st.sidebar.slider("Max Tokens", 200, 2000, 800)
 
-# =========================================
-# SYSTEM PROMPT
-# =========================================
+if "system_prompt" not in st.session_state:
+    st.session_state.system_prompt = (
+        "You are Mr Hlal AI assistant. Respond clearly and professionally."
+    )
+
 with st.sidebar.form("system_prompt_form"):
     new_prompt = st.text_area(
         "System Prompt",
@@ -135,6 +131,74 @@ with st.sidebar.form("system_prompt_form"):
     if st.form_submit_button("Apply"):
         st.session_state.system_prompt = new_prompt
         st.success("Updated ✅")
+
+# =========================================
+# WELCOME MESSAGE (ONLY ONCE)
+# =========================================
+if not st.session_state.messages:
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": "You are welcome in Mr Hlal chatbot 👋\n\nHow can I assist you?"
+    })
+
+# =========================================
+# CHAT MODE
+# =========================================
+if mode == "Chat":
+
+    st.subheader("💬 Chat")
+
+    user_input = st.chat_input("Type message and press Enter...")
+
+    if user_input:
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_input
+        })
+
+    # Display messages
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Generate response
+    if user_input:
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+
+            try:
+                stream = client.chat.completions.create(
+                    model="Qwen/Qwen3.5-35B-A3B:novita",
+                    messages=[
+                        {"role": "system", "content": st.session_state.system_prompt}
+                    ] + st.session_state.messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True
+                )
+
+                for chunk in stream:
+                    if (
+                        chunk.choices
+                        and len(chunk.choices) > 0
+                        and hasattr(chunk.choices[0], "delta")
+                        and chunk.choices[0].delta
+                        and chunk.choices[0].delta.content
+                    ):
+                        full_response += chunk.choices[0].delta.content
+                        message_placeholder.markdown(full_response + "▌")
+
+                message_placeholder.markdown(full_response)
+
+                if full_response.strip():
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": full_response
+                    })
+
+            except Exception as e:
+                st.error(str(e))
 
 # =========================================
 # IMAGE → TEXT
@@ -150,38 +214,27 @@ if mode == "Image → Text":
 
     if uploaded_file:
         image = Image.open(uploaded_file)
-
-        zoom = st.slider("Zoom", 0.5, 3.0, 1.0, 0.1)
-        w, h = image.size
-        resized = image.resize((int(w * zoom), int(h * zoom)))
-        st.image(resized)
+        st.image(image)
 
         if st.button("Generate Description"):
 
             with st.spinner("Analyzing..."):
+                uploaded_file.seek(0)
+                img_bytes = uploaded_file.read()
+                base64_img = base64.b64encode(img_bytes).decode()
+
+                prompt = f"""
+                Analyze this image and describe it in detail.
+                Image data:
+                {base64_img[:4000]}
+                """
 
                 try:
-                    uploaded_file.seek(0)
-                    img_bytes = uploaded_file.read()
-                    base64_img = base64.b64encode(img_bytes).decode()
-
-                    prompt = f"""
-                    Analyze this image and describe it in detail.
-                    Image data:
-                    {base64_img[:4000]}
-                    """
-
                     response = client.chat.completions.create(
                         model="Qwen/Qwen3.5-35B-A3B:novita",
                         messages=[
-                            {
-                                "role": "system",
-                                "content": st.session_state.system_prompt
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
+                            {"role": "system", "content": st.session_state.system_prompt},
+                            {"role": "user", "content": prompt}
                         ],
                         temperature=temperature,
                         max_tokens=max_tokens
@@ -191,7 +244,6 @@ if mode == "Image → Text":
 
                 except Exception as e:
                     st.error(str(e))
-                    st.code(traceback.format_exc())
 
 # =========================================
 # TEXT → IMAGE
@@ -213,68 +265,12 @@ if mode == "Text → Image":
             """
 
             with st.spinner("Generating..."):
-
                 try:
                     image = client.text_to_image(
                         enhanced_prompt,
                         model="stabilityai/stable-diffusion-xl-base-1.0"
                     )
-
                     st.image(image)
 
                 except Exception as e:
                     st.error(str(e))
-                    st.code(traceback.format_exc())
-
-# =========================================
-# CHAT (STREAMING)
-# =========================================
-if mode == "Chat":
-
-    st.subheader("💬 Chat (Streaming)")
-
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    user_input = st.chat_input("Type message...")
-
-    if user_input:
-
-        st.session_state.messages.append(
-            {"role": "user", "content": user_input}
-        )
-
-        with st.chat_message("assistant"):
-
-            message_placeholder = st.empty()
-            full_response = ""
-
-            try:
-                stream = client.chat.completions.create(
-                    model="Qwen/Qwen3.5-35B-A3B:novita",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": st.session_state.system_prompt
-                        }
-                    ] + st.session_state.messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=True
-                )
-
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        full_response += chunk.choices[0].delta.content
-                        message_placeholder.markdown(full_response + "▌")
-
-                message_placeholder.markdown(full_response)
-
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": full_response}
-                )
-
-            except Exception as e:
-                st.error(str(e))
-                st.code(traceback.format_exc())
