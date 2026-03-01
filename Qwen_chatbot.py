@@ -47,7 +47,7 @@ if not st.session_state.authenticated:
 
         login_clicked = st.form_submit_button("Login")
 
-    APP_PASSWORD = "WaelAI1990"
+    APP_PASSWORD = "Wael-1990"
 
     if login_clicked:
 
