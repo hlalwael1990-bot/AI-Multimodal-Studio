@@ -1,6 +1,7 @@
 import streamlit as st
 import base64
 import os
+import traceback
 from PIL import Image
 from huggingface_hub import InferenceClient
 
@@ -16,15 +17,46 @@ st.set_page_config(
 st.title("🚀 AI Multimodal Studio")
 
 # =========================================
-# ACCESS CONTROL (API OR PASSWORD)
+# SAFE TOKEN LOADER
 # =========================================
-st.sidebar.title("🔐 Access Control")
+def load_hf_token():
+    token = None
 
+    # Try Streamlit secrets safely
+    try:
+        if "HF_TOKEN" in st.secrets:
+            token = st.secrets["HF_TOKEN"]
+    except Exception:
+        pass
+
+    # Fallback to environment variable
+    if not token:
+        token = os.getenv("HF_TOKEN")
+
+    return token
+
+# =========================================
+# SESSION INIT
+# =========================================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if "user_token" not in st.session_state:
     st.session_state.user_token = None
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "system_prompt" not in st.session_state:
+    st.session_state.system_prompt = (
+        "You are Qwen 3.5 35B advanced assistant. "
+        "Respond clearly and professionally."
+    )
+
+# =========================================
+# ACCESS CONTROL
+# =========================================
+st.sidebar.title("🔐 Access Control")
 
 if not st.session_state.authenticated:
 
@@ -38,9 +70,9 @@ if not st.session_state.authenticated:
         type="password"
     )
 
-    # يمكنك تغيير كلمة المرور هنا
     APP_PASSWORD = "WaelAI1990"
 
+    # Direct API login
     if user_api:
         if user_api.startswith("hf_"):
             st.session_state.user_token = user_api
@@ -49,22 +81,28 @@ if not st.session_state.authenticated:
         else:
             st.sidebar.error("Invalid API Key ❌")
 
+    # Password login (uses stored token)
     elif password == APP_PASSWORD:
-        # يعمل على Cloud أو Local
-        token = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
+
+        token = load_hf_token()
 
         if token:
             st.session_state.user_token = token
             st.session_state.authenticated = True
             st.rerun()
         else:
-            st.sidebar.error("HF_TOKEN not configured in Secrets ❌")
+            st.sidebar.error("HF_TOKEN not found ❌")
+            st.sidebar.info(
+                "Set HF_TOKEN in .streamlit/secrets.toml or as environment variable."
+            )
 
     st.stop()
 
+# Logout
 if st.sidebar.button("Logout"):
     st.session_state.authenticated = False
     st.session_state.user_token = None
+    st.session_state.messages = []
     st.rerun()
 
 # =========================================
@@ -88,12 +126,6 @@ max_tokens = st.sidebar.slider("Max Tokens", 200, 2000, 800)
 # =========================================
 # SYSTEM PROMPT
 # =========================================
-if "system_prompt" not in st.session_state:
-    st.session_state.system_prompt = (
-        "You are Qwen 3.5 35B advanced assistant. "
-        "Respond clearly and professionally."
-    )
-
 with st.sidebar.form("system_prompt_form"):
     new_prompt = st.text_area(
         "System Prompt",
@@ -128,17 +160,17 @@ if mode == "Image → Text":
 
             with st.spinner("Analyzing..."):
 
-                uploaded_file.seek(0)
-                img_bytes = uploaded_file.read()
-                base64_img = base64.b64encode(img_bytes).decode()
-
-                prompt = f"""
-                Analyze this image content and describe in detail.
-                Image data:
-                {base64_img[:4000]}
-                """
-
                 try:
+                    uploaded_file.seek(0)
+                    img_bytes = uploaded_file.read()
+                    base64_img = base64.b64encode(img_bytes).decode()
+
+                    prompt = f"""
+                    Analyze this image and describe it in detail.
+                    Image data:
+                    {base64_img[:4000]}
+                    """
+
                     response = client.chat.completions.create(
                         model="Qwen/Qwen3.5-35B-A3B:novita",
                         messages=[
@@ -159,6 +191,7 @@ if mode == "Image → Text":
 
                 except Exception as e:
                     st.error(str(e))
+                    st.code(traceback.format_exc())
 
 # =========================================
 # TEXT → IMAGE
@@ -168,7 +201,7 @@ if mode == "Text → Image":
     st.subheader("🎨 Generate Image")
 
     with st.form("image_form"):
-        prompt = st.text_input("Enter prompt and press Enter")
+        prompt = st.text_input("Enter prompt")
         submitted = st.form_submit_button("Generate")
 
         if submitted and prompt.strip():
@@ -191,6 +224,7 @@ if mode == "Text → Image":
 
                 except Exception as e:
                     st.error(str(e))
+                    st.code(traceback.format_exc())
 
 # =========================================
 # CHAT (STREAMING)
@@ -199,14 +233,11 @@ if mode == "Chat":
 
     st.subheader("💬 Chat (Streaming)")
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_input = st.chat_input("Type message and press Enter...")
+    user_input = st.chat_input("Type message...")
 
     if user_input:
 
@@ -246,3 +277,4 @@ if mode == "Chat":
 
             except Exception as e:
                 st.error(str(e))
+                st.code(traceback.format_exc())
